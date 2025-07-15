@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload and Download File</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+
+    <div class="container">
+        <h1>Search Commodity By AI</h1>
+        
+        <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
+            <div class="file-upload" id="drop-area">
+                <div id="drag-icon" class="icon">
+                    <img src="{{ url_for('static', filename='images/4147103.png') }}" alt="Drag Icon" class="upload-icon">
+                </div>
+                <p id="drag-text">Drag your 1 file to start uploading</p>
+                <p id="or-text">OR</p>
+                <button type="button" class="browse-btn" id="browse-btn">Browse files</button>
+                <input type="file" name="file" id="file" accept=".xlsx" required style="display: none;">
+                <p class="warning-text"> *** Only support excel file</p>
+                
+                <!-- Keep the icon and the file name visible after upload -->
+                <div id="uploaded-info" style="display: none;">
+                    <div id="uploaded-icon">
+                        <img src="{{ url_for('static', filename='images/excel.png') }}" alt="Uploaded File Icon" class="upload-icon">
+                    </div>
+                    <p id="file-name" style="display: inline-block;"></p>
+                </div>
+
+                <!-- Buttons for uploading or canceling, hidden initially -->
+                <div id="buttons" style="display: none;">
+                    <button type="submit" class="upload-btn">Upload</button>
+                    <button id="cancel-btn" type="button" class="cancel-btn">Cancel</button>
+                </div>
+            </div>
+        </form>
+
+        <div class="download-section" id="download-link" style="display: none;">
+            <h3>Your processed file is ready!</h3>
+            <!-- Image section -->
+            <div id="download-img">
+                <img src="{{ url_for('static', filename='images/validation.png') }}" alt="Processed File">
+            </div>
+            <!-- Download button section -->
+            <div id="download-btn-container">
+                <a href="#" id="download-btn" class="download-btn" download>Download Processed File</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.querySelector('#uploadForm').onsubmit = async function(event) {
+            event.preventDefault();
+            const formData = new FormData(this);
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                const downloadLink = document.getElementById('download-link');
+                const downloadBtn = document.getElementById('download-btn');
+                downloadLink.style.display = 'block';
+                downloadBtn.href = URL.createObjectURL(await response.blob());
+            } else {
+                const errorData = await response.json();
+
+                // Handle rate limit exceeded error
+                if (errorData.error && errorData.error.includes("API rate limit exceeded")) {
+                    const userConfirmed = confirm(errorData.error);
+                    
+                    if (userConfirmed) {
+                        // If user agrees, retry processing
+                        const retryResponse = await fetch('/upload', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        if (retryResponse.ok) {
+                            const downloadLink = document.getElementById('download-link');
+                            const downloadBtn = document.getElementById('download-btn');
+                            downloadLink.style.display = 'block';
+                            downloadBtn.href = URL.createObjectURL(await retryResponse.blob());
+                        }
+                    } else {
+                        // If user does not agree, stop the process
+                        alert("Process aborted.");
+                    }
+                } else {
+                    // General error message
+                    alert('Error uploading file: ' + (errorData.error || 'Unknown error'));
+                }
+            }
+        };
+
+        const dropArea = document.getElementById('drop-area');
+        const fileInput = document.getElementById('file');
+        const browseBtn = document.getElementById('browse-btn');
+        const dragIcon = document.getElementById('drag-icon');
+        const dragText = document.getElementById('drag-text');
+        const orText = document.getElementById('or-text');
+        const warningText = document.querySelector('.warning-text');
+        const fileNameText = document.getElementById('file-name');
+        const uploadedInfo = document.getElementById('uploaded-info');
+        const buttons = document.getElementById('buttons');
+        const cancelBtn = document.getElementById('cancel-btn');
+
+        // Trigger file input when the "Browse files" button is clicked
+        browseBtn.addEventListener('click', function() {
+            fileInput.click();
+        });
+
+        dropArea.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            dropArea.classList.add('dragover'); // Add the "dragover" class for darkening effect
+            dragIcon.innerHTML = `<img src="{{ url_for('static', filename='images/excel.png') }}" alt="Drop Icon" class="upload-icon">`;
+            dragText.textContent = "Drop the file here to upload";
+        });
+
+        dropArea.addEventListener('dragleave', () => {
+            dropArea.classList.remove('dragover'); // Remove the "dragover" class to revert the color
+            dragIcon.innerHTML = ''; // Clear the drop icon when drag leaves
+            dragText.textContent = "Drag your 1 file to start uploading";
+        });
+
+        dropArea.addEventListener('drop', (event) => {
+            event.preventDefault();
+            const file = event.dataTransfer.files[0];
+            fileInput.files = event.dataTransfer.files;
+
+            // Hide previous elements and show the file name, icon, and buttons
+            resetUploadUI();
+
+            // Show file name and uploaded icon
+            uploadedInfo.style.display = 'block';
+            fileNameText.textContent = `File: ${file.name}`;
+
+            // Show the "Upload" and "Cancel" buttons
+            buttons.style.display = 'flex';
+        });
+
+        // Handle file selection from "Browse files"
+        fileInput.addEventListener('change', function() {
+            const file = fileInput.files[0];
+
+            // Hide previous elements and show the file name, icon, and buttons
+            resetUploadUI();
+
+            // Show file name and uploaded icon
+            uploadedInfo.style.display = 'block';
+            fileNameText.textContent = `File: ${file.name}`;
+
+            // Show the "Upload" and "Cancel" buttons
+            buttons.style.display = 'flex';
+        });
+
+        // Reset the UI to initial state
+        function resetUploadUI() {
+            // Resetting all relevant UI elements to hide file input, warning text, etc.
+            dragIcon.style.display = 'none';
+            dragText.style.display = 'none';
+            orText.style.display = 'none';
+            browseBtn.style.display = 'none';
+            fileInput.style.display = 'none';
+            warningText.style.display = 'none';
+            dropArea.classList.remove('dragover'); // Remove the hover effect when reset
+            dragIcon.innerHTML = `<img src="{{ url_for('static', filename='images/4147103.png') }}" alt="Drag Icon" class="upload-icon">`; // Reset to default drag icon
+        }
+
+        // Handle cancel button click (now refreshes the page like F5)
+        cancelBtn.addEventListener('click', function() {
+            // Simulate F5/refresh behavior by reloading the page
+            location.reload();
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload and Download File</title>
+    <link rel="stylesheet" href="styles.css"> <!-- Liên kết với file CSS -->
+</head>
+<body>
+
+    <div class="container">
+        <h1>Upload Your File</h1>
+        
+        <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
+            <div class="file-upload">
+                <input type="file" name="file" id="file" accept=".xlsx" required>
+            </div>
+            <button type="submit">Upload</button>
+        </form>
+
+        <div class="download-section" id="download-link" style="display: none;">
+            <h3>Your processed file is ready!</h3>
+            <img src="https://image.shutterstock.com/image-vector/illustration-file-icon-symbol-filetype-260nw-1707993097.jpg" alt="Processed File">
+            <a href="#" id="download-btn" download>Download Processed File</a>
+        </div>
+    </div>
+
+    <script>
+        // Handle form submission and show download link
+        document.querySelector('#uploadForm').onsubmit = async function(event) {
+            event.preventDefault();  // Prevent the form from submitting normally
+
+            const formData = new FormData(this);
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                const downloadLink = document.getElementById('download-link');
+                const downloadBtn = document.getElementById('download-btn');
+                downloadLink.style.display = 'block';
+                downloadBtn.href = URL.createObjectURL(await response.blob()); // Blob URL
+            } else {
+                alert('Error uploading file');
+            }
+        };
+    </script>
+
+</body>
+</html>

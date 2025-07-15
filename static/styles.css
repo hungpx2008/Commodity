@@ -1,0 +1,176 @@
+/* Basic Layout Styling */
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f5f5f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}
+
+.container {
+    background-color: #fff;
+    border-radius: 15px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    width: 400px;
+    padding: 40px;
+    text-align: center;
+}
+
+h1 {
+    color: #333;
+    font-size: 24px;
+    margin-bottom: 20px;
+}
+
+/* File Upload Section */
+.file-upload {
+    margin-bottom: 20px;
+    border: 2px dashed #2196F3;
+    padding: 40px;
+    border-radius: 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+/* Hover effect for the drop area */
+.file-upload.dragover {
+    background-color: #e3f2fd; /* Light blue background on hover */
+}
+
+.file-upload p {
+    margin: 10px 0;
+    font-size: 16px;
+}
+
+.file-upload .browse-btn {
+    background-color: #2196F3;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 5px;
+    font-size: 16px;
+    border: none;
+    cursor: pointer;
+}
+
+.file-upload input[type="file"] {
+    display: none;
+}
+
+.warning-text {
+    font-size: 12px;
+    color: rgb(247, 38, 38);
+    text-align: left;  /* Align text to the left */
+    display: flex;     /* Use flexbox for icon and text alignment */
+    align-items: center; /* Vertically align text and icon */
+    margin-left: 20px; /* Adjust margin to give space on the left */
+}
+
+/* Upload and Cancel Buttons */
+#buttons {
+    display: none;
+    display: flex;
+    justify-content: space-between;
+}
+
+.upload-btn {
+    background-color: #4CAF50;
+    color: white;
+    padding: 15px 30px;
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    cursor: pointer;
+    width: 48%;
+    transition: background-color 0.3s ease;
+}
+
+.upload-btn:hover {
+    background-color: #45a049;
+}
+
+.cancel-btn {
+    background-color: #f44336;
+    color: white;
+    padding: 15px 30px;
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    cursor: pointer;
+    width: 48%;
+    transition: background-color 0.3s ease;
+}
+
+.cancel-btn:hover {
+    background-color: #e53935;
+}
+
+/* Download Section */
+.download-section {
+    margin-top: 20px;
+    text-align: center;
+}
+
+#download-img img {
+    width: 50px;  /* Adjust width as needed */
+    height: 50px;  /* Adjust height as needed */
+    margin-bottom: 10px;
+}
+
+#download-btn-container {
+    margin-top: 10px;
+}
+
+.download-btn {
+    background-color: #2196F3;
+    color: white;
+    padding: 15px 30px;
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    text-decoration: none;
+    display: inline-block;
+    transition: background-color 0.3s ease;
+}
+
+.download-btn:hover {
+    background-color: #0b79d0;
+}
+
+/* Reset upload UI */
+#uploaded-info {
+    display: none;
+}
+
+/* Additional styling for drag and drop effect */
+.hover {
+    border-color: #0b79d0;
+}
+
+.upload-icon {
+    height: 50px;
+}
+
+/* Progress bar (NProgress) styling */
+#nprogress .bar {
+    background: #29d;
+    height: 4px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+}
+
+#nprogress .peg {
+    box-shadow: 0 0 10px #29d, 0 0 5px #29d;
+}
+
+/* Processing message */
+#processing-message {
+    margin-top: 20px;
+    font-size: 16px;
+    color: #2196F3;
+    font-weight: bold;
+}

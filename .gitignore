@@ -1,0 +1,22 @@
+.venv
+__pycache__/
+*.pyc
+.DS_Store
+processed_file_with_final_match.xlsx
+processed_file_with_similarity.xlsx
+processed_file.xlsx
+uploads/
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Commodity
+Commodity/
+
+# Thumbnails
+static/images/.@__thumb/
+
+# Images
+static/images/

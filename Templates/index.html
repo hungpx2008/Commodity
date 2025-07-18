@@ -7,6 +7,20 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Đang xử lý file...</div>
+            <div class="loading-subtext">Vui lòng chờ trong giây lát. AI đang phân tích dữ liệu của bạn.</div>
+            <!-- Timer display -->
+            <div class="timer-display" id="timer-display">
+                <span class="timer-label">Thời gian xử lý:</span>
+                <span class="timer-value" id="timer-value">00:00</span>
+            </div>
+            <button type="button" class="stop-btn" id="stop-btn">Stop</button>
+        </div>
+    </div>
 
     <div class="container">
         <h1>Search Commodity By AI</h1>
@@ -42,7 +56,7 @@
             <h3>Your processed file is ready!</h3>
             <!-- Image section -->
             <div id="download-img">
-                <img src="{{ url_for('static', filename='images/validation.png') }}" alt="Processed File">
+                <img src="{{ url_for('static', filename='images/validation2.png') }}" alt="Processed File">
             </div>
             <!-- Download button section -->
             <div id="download-btn-container">
@@ -51,47 +65,190 @@
         </div>
     </div>
 
+
+
     <script>
+        // Global variable to store the AbortController
+        let abortController = null;
+        let timerInterval = null;
+        let startTime = null;
+
+        // Function to start the timer
+        function startTimer() {
+            startTime = Date.now();
+            const timerValue = document.getElementById('timer-value');
+            
+            timerInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                
+                // Format time as MM:SS
+                const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                timerValue.textContent = formattedTime;
+            }, 1000);
+        }
+
+        // Function to stop the timer
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
+        // Function to reset the timer
+        function resetTimer() {
+            stopTimer();
+            document.getElementById('timer-value').textContent = '00:00';
+            startTime = null;
+        }
+
+        // Function to show loading
+        function showLoading() {
+            document.getElementById('loading-overlay').style.display = 'flex';
+            document.getElementById('uploadForm').classList.add('form-disabled');
+            resetTimer();
+            startTimer();
+        }
+
+        // Function to hide loading
+        function hideLoading() {
+            document.getElementById('loading-overlay').style.display = 'none';
+            document.getElementById('uploadForm').classList.remove('form-disabled');
+            stopTimer();
+            // Reset abort controller
+            abortController = null;
+        }
+
+        // Function to stop the upload process
+        function stopUpload() {
+            if (abortController) {
+                abortController.abort(); // Abort the fetch request
+                hideLoading();  // Hide the loading overlay
+
+                // Notify the back-end that the process should be stopped
+                fetch('/cancel-upload', {
+                    method: 'POST',
+                    signal: abortController.signal,  // Send the same signal for cancellation
+                })
+                .then(response => {
+                    if (response.ok) {
+                        alert('Upload đã được dừng lại.');
+                    } else {
+                        alert('Không thể dừng tiến trình trên máy chủ.');
+                    }
+                })
+                .catch(err => {
+                    alert('Lỗi khi yêu cầu dừng tiến trình: ' + err.message);
+                });
+            }
+        }
+
+        // Add event listener for Stop button
+        document.getElementById('stop-btn').addEventListener('click', stopUpload);
+
         document.querySelector('#uploadForm').onsubmit = async function(event) {
             event.preventDefault();
+            
+            // Create new AbortController for this request
+            abortController = new AbortController();
+            
+            // Show loading overlay when Upload button is clicked
+            showLoading();
+            
             const formData = new FormData(this);
-            const response = await fetch('/upload', {
-                method: 'POST',
-                body: formData
-            });
+            
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData,
+                    signal: abortController.signal
+                });
 
-            if (response.ok) {
-                const downloadLink = document.getElementById('download-link');
-                const downloadBtn = document.getElementById('download-btn');
-                downloadLink.style.display = 'block';
-                downloadBtn.href = URL.createObjectURL(await response.blob());
-            } else {
-                const errorData = await response.json();
+                // Hide loading overlay
+                hideLoading();
 
-                // Handle rate limit exceeded error
-                if (errorData.error && errorData.error.includes("API rate limit exceeded")) {
-                    const userConfirmed = confirm(errorData.error);
+                if (response.ok) {
+                    const downloadLink = document.getElementById('download-link');
+                    const downloadBtn = document.getElementById('download-btn');
+                    downloadLink.style.display = 'block';
+                    downloadBtn.href = URL.createObjectURL(await response.blob());
                     
-                    if (userConfirmed) {
-                        // If user agrees, retry processing
-                        const retryResponse = await fetch('/upload', {
-                            method: 'POST',
-                            body: formData
-                        });
+                    // Scroll to download section
+                    downloadLink.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    // Try to get error message from response
+                    let errorMessage = 'Unknown error';
+                    try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.error || errorMessage;
+                    } catch (parseError) {
+                        // If response is not JSON, try to get text
+                        try {
+                            errorMessage = await response.text();
+                        } catch (textError) {
+                            errorMessage = `HTTP Error ${response.status}: ${response.statusText}`;
+                        }
+                    }
 
-                        if (retryResponse.ok) {
-                            const downloadLink = document.getElementById('download-link');
-                            const downloadBtn = document.getElementById('download-btn');
-                            downloadLink.style.display = 'block';
-                            downloadBtn.href = URL.createObjectURL(await retryResponse.blob());
+                    // Handle rate limit exceeded error
+                    if (errorMessage.includes("API rate limit exceeded")) {
+                        const userConfirmed = confirm(errorMessage);
+                        
+                        if (userConfirmed) {
+                            // Create new AbortController for retry
+                            abortController = new AbortController();
+                            
+                            // Show loading again for retry
+                            showLoading();
+                            
+                            // If user agrees, retry processing
+                            const retryResponse = await fetch('/upload', {
+                                method: 'POST',
+                                body: formData,
+                                signal: abortController.signal
+                            });
+
+                            // Hide loading after retry
+                            hideLoading();
+
+                            if (retryResponse.ok) {
+                                const downloadLink = document.getElementById('download-link');
+                                const downloadBtn = document.getElementById('download-btn');
+                                downloadLink.style.display = 'block';
+                                downloadBtn.href = URL.createObjectURL(await retryResponse.blob());
+                                
+                                // Scroll to download section
+                                downloadLink.scrollIntoView({ behavior: 'smooth' });
+                            } else {
+                                // Handle retry error
+                                try {
+                                    const retryErrorData = await retryResponse.json();
+                                    alert('Retry failed: ' + (retryErrorData.error || 'Unknown error'));
+                                } catch (retryParseError) {
+                                    alert('Retry failed: ' + retryResponse.statusText);
+                                }
+                            }
+                        } else {
+                            // If user does not agree, stop the process
+                            alert("Process aborted.");
                         }
                     } else {
-                        // If user does not agree, stop the process
-                        alert("Process aborted.");
+                        // General error message - show specific error
+                        alert('Lỗi xử lý file: ' + errorMessage);
                     }
+                }
+            } catch (error) {
+                // Hide loading on error
+                hideLoading();
+                
+                if (error.name === 'AbortError') {
+                    // Request was aborted by user
+                    console.log('Upload was stopped by user');
                 } else {
-                    // General error message
-                    alert('Error uploading file: ' + (errorData.error || 'Unknown error'));
+                    // Other network errors
+                    alert('Network error: ' + error.message);
                 }
             }
         };
@@ -115,14 +272,14 @@
 
         dropArea.addEventListener('dragover', (event) => {
             event.preventDefault();
-            dropArea.classList.add('dragover'); // Add the "dragover" class for darkening effect
+            dropArea.classList.add('dragover');
             dragIcon.innerHTML = `<img src="{{ url_for('static', filename='images/excel.png') }}" alt="Drop Icon" class="upload-icon">`;
             dragText.textContent = "Drop the file here to upload";
         });
 
         dropArea.addEventListener('dragleave', () => {
-            dropArea.classList.remove('dragover'); // Remove the "dragover" class to revert the color
-            dragIcon.innerHTML = ''; // Clear the drop icon when drag leaves
+            dropArea.classList.remove('dragover');
+            dragIcon.innerHTML = '';
             dragText.textContent = "Drag your 1 file to start uploading";
         });
 
@@ -166,8 +323,8 @@
             browseBtn.style.display = 'none';
             fileInput.style.display = 'none';
             warningText.style.display = 'none';
-            dropArea.classList.remove('dragover'); // Remove the hover effect when reset
-            dragIcon.innerHTML = `<img src="{{ url_for('static', filename='images/4147103.png') }}" alt="Drag Icon" class="upload-icon">`; // Reset to default drag icon
+            dropArea.classList.remove('dragover');
+            dragIcon.innerHTML = `<img src="{{ url_for('static', filename='images/4147103.png') }}" alt="Drag Icon" class="upload-icon">`;
         }
 
         // Handle cancel button click (now refreshes the page like F5)
@@ -176,6 +333,5 @@
             location.reload();
         });
     </script>
-
 </body>
 </html>

@@ -8,6 +8,7 @@ from sklearn.feature_extraction.text import CountVectorizer
 import concurrent.futures
 import threading
 import time
+import traceback
 
 app = Flask(__name__)
 
@@ -19,7 +20,7 @@ openai_api_error = False
 # Configure OpenRouter API
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
-    api_key="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",  # Ensure to keep your API key secure
+    api_key="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",
 )
 
 # Config file path
@@ -30,32 +31,58 @@ def load_reference_list():
     try:
         with open(REFERENCE_PATH, "r") as f:
             return json.load(f)
+    except FileNotFoundError:
+        print("Reference file not found, using default reference.")
+        return [""]
+    except json.JSONDecodeError as e:
+        print(f"Invalid JSON format in reference file: {e}")
+        return [""]
     except Exception as e:
         print(f"Could not load reference list: {e}")
-        return ["FLUID SEAMLESS STEEL"]
+        return [""]
 
 # Save references to file
 def save_reference_list(reference_list):
-    os.makedirs(os.path.dirname(REFERENCE_PATH), exist_ok=True)
-    with open(REFERENCE_PATH, "w") as f:
-        json.dump(reference_list, f, indent=2)
+    try:
+        os.makedirs(os.path.dirname(REFERENCE_PATH), exist_ok=True)
+        with open(REFERENCE_PATH, "w") as f:
+            json.dump(reference_list, f, indent=2)
+    except Exception as e:
+        print(f"Could not save reference list: {e}")
+        raise
 
 # Load global reference list
 REFERENCE_COMMODITY_LIST = load_reference_list()
 
 # Cosine similarity check
 def check_cosine_similarity(commodity):
-    for ref in REFERENCE_COMMODITY_LIST:
-        vectorizer = CountVectorizer().fit_transform([commodity, ref])
-        cosine_sim = cosine_similarity(vectorizer[0:1], vectorizer[1:2])
-        if cosine_sim[0][0] > 0.1:
-            return 'Y'
-    return 'N'
+    try:
+        if not commodity or pd.isna(commodity) or str(commodity).strip() == '':
+            return 'N'
+        
+        commodity_str = str(commodity).strip()
+        for ref in REFERENCE_COMMODITY_LIST:
+            if not ref or str(ref).strip() == '':
+                continue
+            vectorizer = CountVectorizer().fit_transform([commodity_str, str(ref)])
+            cosine_sim = cosine_similarity(vectorizer[0:1], vectorizer[1:2])
+            if cosine_sim[0][0] > 0.1:
+                return 'Y'
+        return 'N'
+    except Exception as e:
+        print(f"Error in cosine similarity check: {e}")
+        return 'N'
+
+class RateLimitError(Exception):
+    pass
 
 # LLM prompt using OR logic
 def check_commodity_from_llm(commodity):
-    global openai_api_error  # To track if API call fails
+    global openai_api_error
     try:
+        if not commodity or pd.isna(commodity) or str(commodity).strip() == '':
+            return 'N'
+            
         reference_string = ', or '.join(f"'{ref}'" for ref in REFERENCE_COMMODITY_LIST)
         prompt = (f"You are an expert in commodities. Your task is to determine if a commodity matches any of the following references: "
             f"Does the phrase '{commodity}' mean the same as the following: "
@@ -63,16 +90,23 @@ def check_commodity_from_llm(commodity):
         )
         
         completion = client.chat.completions.create(
-            #model="openai/gpt-4o-mini-2024-07-18",
             model="deepseek/deepseek-r1-0528:free",
             messages=[{"role": "user", "content": prompt}],
+            timeout=30  # Add timeout
         )
         result = completion.choices[0].message.content.strip()
         return 'Y' if result == 'Y' else 'N'
     except Exception as e:
-        if 'Rate limit exceeded' in str(e):
-            openai_api_error = True  # Set flag when API rate limit error occurs
-        print(f"Error in LLM: {e}")
+        error_msg = str(e).lower()
+        if 'rate limit' in error_msg or '429' in error_msg:
+            openai_api_error = True
+            print(f"API Rate limit exceeded: {e}")
+        elif 'timeout' in error_msg:
+            print(f"API Timeout error: {e}")
+        elif 'connection' in error_msg:
+            print(f"API Connection error: {e}")
+        else:
+            print(f"Error in LLM: {e}")
         return 'N'
 
 # Combine cosine and LLM with fallback to Cosine if LLM fails
@@ -87,22 +121,72 @@ def check_commodity_and_cosine(commodity):
             future_cosine = executor.submit(check_cosine_similarity, commodity)
             future_llm = executor.submit(check_commodity_from_llm, commodity)
             try:
-                return future_cosine.result(), future_llm.result()
-            except:
+                return future_cosine.result(timeout=60), future_llm.result(timeout=60)
+            except concurrent.futures.TimeoutError:
+                print("Timeout occurred during processing")
+                return future_cosine.result(), 'N'
+            except Exception as e:
+                print(f"Error in concurrent execution: {e}")
                 return future_cosine.result(), 'N'
 
 # Process uploaded Excel
 def process_file(file_path):
     try:
-        # Đọc toàn bộ file Excel, giữ nguyên tất cả các cột
-        df = pd.read_excel(file_path)
+        # Kiểm tra file có tồn tại không
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File không tồn tại: {file_path}")
         
-        # Kiểm tra xem có cột COMMODITY không
-        if 'COMMODITY' not in df.columns:
-            raise ValueError("File Excel phải có cột 'COMMODITY'")
+        # Kiểm tra kích thước file
+        file_size = os.path.getsize(file_path)
+        if file_size == 0:
+            raise ValueError("File rỗng, vui lòng chọn file có dữ liệu")
         
-        # Áp dụng logic xử lý cho cột COMMODITY và tạo 2 cột mới
-        commodity_results = df['COMMODITY'].apply(lambda x: pd.Series(check_commodity_and_cosine(x)))
+        # Kiểm tra định dạng file
+        if not file_path.lower().endswith(('.xlsx', '.xls')):
+            raise ValueError("Chỉ hỗ trợ file Excel (.xlsx, .xls)")
+        
+        # Đọc toàn bộ file Excel
+        try:
+            df = pd.read_excel(file_path)
+        except pd.errors.EmptyDataError:
+            raise ValueError("File Excel không có dữ liệu")
+        except pd.errors.ParserError as e:
+            raise ValueError(f"File Excel bị lỗi định dạng: {str(e)}")
+        except Exception as e:
+            if "No such file or directory" in str(e):
+                raise FileNotFoundError("Không thể đọc file Excel")
+            else:
+                raise ValueError(f"Lỗi đọc file Excel: {str(e)}")
+        
+        # Kiểm tra DataFrame có rỗng không
+        if df.empty:
+            raise ValueError("File Excel không có dữ liệu")
+        
+        # Tìm cột COMMODITY một cách linh hoạt
+        commodity_column = None
+        available_columns = list(df.columns)
+        
+        for col in df.columns:
+            if str(col).upper().strip() == 'COMMODITY':
+                commodity_column = col
+                break
+        
+        if commodity_column is None:
+            columns_list = ', '.join([f"'{col}'" for col in available_columns])
+            raise ValueError(f"File Excel có vẻ không có cột 'COMMODITY' hoặc không đúng chính tả.")
+        
+        # Kiểm tra cột COMMODITY có dữ liệu không
+        if df[commodity_column].isna().all():
+            raise ValueError(f"Cột '{commodity_column}' không có dữ liệu")
+        
+        # Kiểm tra số lượng dòng
+        if len(df) > 10000:
+            raise ValueError(f"File quá lớn ({len(df)} dòng). Chỉ hỗ trợ tối đa 10,000 dòng")
+        
+        print(f"Đang xử lý {len(df)} dòng dữ liệu...")
+        
+        # Áp dụng logic xử lý cho cột COMMODITY
+        commodity_results = df[commodity_column].apply(lambda x: pd.Series(check_commodity_and_cosine(x)))
         df['Cosine_Similarity'] = commodity_results[0]
         df['LLM_Result'] = commodity_results[1]
         
@@ -112,12 +196,24 @@ def process_file(file_path):
             axis=1
         )
         
+        # Tạo thư mục output nếu chưa có
+        output_dir = "output"
+        os.makedirs(output_dir, exist_ok=True)
+        
         # Lưu file với tên mới
-        output_file = "processed_file_with_final_match.xlsx"
-        df.to_excel(output_file, index=False)
+        output_file = os.path.join(output_dir, "processed_file_with_final_match.xlsx")
+        try:
+            df.to_excel(output_file, index=False)
+        except PermissionError:
+            raise ValueError("Không thể ghi file kết quả. File có thể đang được mở bởi ứng dụng khác")
+        except Exception as e:
+            raise ValueError(f"Lỗi khi lưu file kết quả: {str(e)}")
+        
         return output_file
+        
     except Exception as e:
         print(f"Error processing file: {e}")
+        print(f"Full traceback: {traceback.format_exc()}")
         raise
 
 @app.route('/')
@@ -128,74 +224,173 @@ def home():
 def long_running_task(file):
     global current_task, upload_cancelled
     try:
-        # Simulate file processing by sleeping for a few seconds
-        for i in range(10):  # Simulating task (e.g., processing a file)
-            if upload_cancelled:  # If the task is cancelled, stop the processing
+        for i in range(10):
+            if upload_cancelled:
                 break
-            time.sleep(1)  # Simulate processing
+            time.sleep(1)
             print(f"Processing {file}... {i + 1}/10")
         
         if not upload_cancelled:
             print(f"File {file} processed successfully!")
     finally:
-        current_task = None  # Reset the task when it's done
+        current_task = None
 
-# Upload route
+# Upload route với xử lý lỗi chi tiết
 @app.route('/upload', methods=['POST'])
 def upload_file():
     global current_task, upload_cancelled, openai_api_error
 
     try:
+        # Kiểm tra có file được upload không
+        if 'file' not in request.files:
+            return jsonify({
+                "error": "Không có file nào được chọn",
+                "error_type": "NO_FILE"
+            }), 400
+
         file = request.files['file']
         if not file or file.filename == '':
-            return "No file uploaded", 400
+            return jsonify({
+                "error": "Vui lòng chọn một file để upload",
+                "error_type": "EMPTY_FILE"
+            }), 400
 
+        # Kiểm tra định dạng file
+        allowed_extensions = {'.xlsx', '.xls'}
+        file_ext = os.path.splitext(file.filename.lower())[1]
+        if file_ext not in allowed_extensions:
+            return jsonify({
+                "error": f"Định dạng file không được hỗ trợ. Chỉ chấp nhận file Excel (.xlsx, .xls). File của bạn: {file_ext}",
+                "error_type": "INVALID_FORMAT"
+            }), 400
+
+        # Tạo thư mục upload
         upload_dir = 'uploads'
-        os.makedirs(upload_dir, exist_ok=True)
-        file_path = os.path.join(upload_dir, file.filename)
-        file.save(file_path)
+        try:
+            os.makedirs(upload_dir, exist_ok=True)
+        except Exception as e:
+            return jsonify({
+                "error": f"Không thể tạo thư mục upload: {str(e)}",
+                "error_type": "UPLOAD_DIR_ERROR"
+            }), 500
 
-        # Reset the error flag
+        file_path = os.path.join(upload_dir, file.filename)
+        
+        # Lưu file
+        try:
+            file.save(file_path)
+        except Exception as e:
+            return jsonify({
+                "error": f"Không thể lưu file: {str(e)}",
+                "error_type": "SAVE_ERROR"
+            }), 500
+
+        # Reset error flags
         openai_api_error = False
 
-        # Start the long-running task in a new thread
+        # Start long-running task
         upload_cancelled = False
         current_task = threading.Thread(target=long_running_task, args=(file.filename,))
         current_task.start()
 
-        # Process the file and return the processed file as an Excel download
-        processed_path = process_file(file_path)
+        # Process file
+        try:
+            processed_path = process_file(file_path)
+        except FileNotFoundError as e:
+            return jsonify({
+                "error": str(e),
+                "error_type": "FILE_NOT_FOUND"
+            }), 404
+        except ValueError as e:
+            return jsonify({
+                "error": str(e),
+                "error_type": "VALIDATION_ERROR"
+            }), 400
+        except pd.errors.EmptyDataError:
+            return jsonify({
+                "error": "File Excel rỗng hoặc không có dữ liệu",
+                "error_type": "EMPTY_DATA"
+            }), 400
+        except pd.errors.ParserError:
+            return jsonify({
+                "error": "File Excel bị lỗi định dạng, không thể đọc được",
+                "error_type": "PARSE_ERROR"
+            }), 400
+        except PermissionError:
+            return jsonify({
+                "error": "Không có quyền truy cập file hoặc file đang được sử dụng",
+                "error_type": "PERMISSION_ERROR"
+            }), 403
+        except MemoryError:
+            return jsonify({
+                "error": "File quá lớn, không đủ bộ nhớ để xử lý",
+                "error_type": "MEMORY_ERROR"
+            }), 413
+        except Exception as e:
+            return jsonify({
+                "error": f"Lỗi không xác định khi xử lý file: {str(e)}",
+                "error_type": "PROCESSING_ERROR",
+                "details": str(e)
+            }), 500
 
-        # Notify the user if the OpenAI API was not used (429 error)
+        # Kiểm tra file output có tồn tại không
+        if not os.path.exists(processed_path):
+            return jsonify({
+                "error": "File kết quả không được tạo ra",
+                "error_type": "OUTPUT_ERROR"
+            }), 500
+
+        # Notify user if OpenAI API was not used
+        response = send_file(
+            processed_path, 
+            as_attachment=True, 
+            download_name="processed_file.xlsx"
+        )
         if openai_api_error:
-            return send_file(processed_path, as_attachment=True, download_name="processed_file_with_cosine_only.xlsx")
-
-        return send_file(processed_path, as_attachment=True)
+            response.headers['X-API-Fallback'] = 'true'
+        return response
 
     except Exception as e:
-        return str(e), 500
+        # Log full error for debugging
+        print(f"Unexpected error in upload_file: {e}")
+        print(f"Full traceback: {traceback.format_exc()}")
+        
+        return jsonify({
+            "error": f"Lỗi hệ thống không xác định: {str(e)}",
+            "error_type": "SYSTEM_ERROR"
+        }), 500
 
 # Cancel upload route
 @app.route('/cancel-upload', methods=['POST'])
 def cancel_upload():
     global current_task, upload_cancelled
 
-    if current_task is not None:
-        # Set the cancel flag to True
-        upload_cancelled = True
-        # Wait for the task to cleanly exit
-        current_task.join()
-        return jsonify({"message": "Process has been cancelled."}), 200
-    else:
-        return jsonify({"error": "No ongoing process to cancel."}), 400
+    try:
+        if current_task is not None:
+            upload_cancelled = True
+            current_task.join(timeout=5)  # Wait max 5 seconds
+            return jsonify({"message": "Quá trình xử lý đã được hủy bỏ."}), 200
+        else:
+            return jsonify({"error": "Không có quá trình nào đang chạy để hủy bỏ."}), 400
+    except Exception as e:
+        return jsonify({
+            "error": f"Lỗi khi hủy bỏ quá trình: {str(e)}",
+            "error_type": "CANCEL_ERROR"
+        }), 500
 
-# Status route to check the process
+# Status route
 @app.route('/status', methods=['GET'])
 def status():
-    if current_task is not None:
-        return jsonify({"status": "Processing in progress"}), 200
-    else:
-        return jsonify({"status": "No process running"}), 200
+    try:
+        if current_task is not None and current_task.is_alive():
+            return jsonify({"status": "Đang xử lý..."}), 200
+        else:
+            return jsonify({"status": "Không có quá trình nào đang chạy"}), 200
+    except Exception as e:
+        return jsonify({
+            "error": f"Lỗi khi kiểm tra trạng thái: {str(e)}",
+            "error_type": "STATUS_ERROR"
+        }), 500
 
 # Set reference route
 @app.route('/set-reference', methods=['POST'])
@@ -204,17 +399,54 @@ def set_reference():
     try:
         reference_raw = request.form.get('reference') or request.json.get('reference')
         if not reference_raw:
-            return "Missing reference input", 400
+            return jsonify({
+                "error": "Thiếu dữ liệu reference",
+                "error_type": "MISSING_REFERENCE"
+            }), 400
 
-        REFERENCE_COMMODITY_LIST = [r.strip() for r in reference_raw.split(',') if r.strip()]
+        # Validate reference data
+        reference_list = [r.strip() for r in reference_raw.split(',') if r.strip()]
+        if not reference_list:
+            return jsonify({
+                "error": "Reference không được để trống",
+                "error_type": "EMPTY_REFERENCE"
+            }), 400
+
+        if len(reference_list) > 50:
+            return jsonify({
+                "error": "Quá nhiều reference (tối đa 50)",
+                "error_type": "TOO_MANY_REFERENCES"
+            }), 400
+
+        REFERENCE_COMMODITY_LIST = reference_list
         save_reference_list(REFERENCE_COMMODITY_LIST)
         return render_template('index.html', references=REFERENCE_COMMODITY_LIST)
+    
     except Exception as e:
-        return str(e), 500
+        return jsonify({
+            "error": f"Lỗi khi cập nhật reference: {str(e)}",
+            "error_type": "REFERENCE_UPDATE_ERROR"
+        }), 500
+
+# Global error handler
+@app.errorhandler(404)
+def not_found_error(error):
+    return jsonify({
+        "error": "Không tìm thấy trang yêu cầu",
+        "error_type": "NOT_FOUND"
+    }), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({
+        "error": "Lỗi hệ thống nội bộ",
+        "error_type": "INTERNAL_ERROR"
+    }), 500
 
 if __name__ == "__main__":
-    # Ensure the uploads directory exists
-    if not os.path.exists('uploads'):
-        os.makedirs('uploads')
-
-    app.run(debug=True)
+    # Ensure directories exist
+    for directory in ['uploads', 'output', 'config']:
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+    
+    app.run(host='0.0.0.0', port=8000, debug=True)

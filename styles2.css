@@ -17,43 +17,10 @@ body {
     text-align: center;
 }
 h1 {
-    color: #0c0feb;
+    color: #333;
     font-size: 24px;
     margin-bottom: 20px;
 }
-
-/* Reference Section */
-.reference-section {
-    margin-bottom: 20px;
-    padding: 15px;
-    border: 1px solid #ddd;
-    border-radius: 10px;
-    background-color: #f9f9f9;
-}
-
-.reference-section h2 {
-    font-size: 18px;
-    color: #333;
-    margin-top: 0;
-    margin-bottom: 10px;
-}
-
-.reference-list {
-    list-style-type: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-.reference-list li {
-    background-color: #e0e0e0;
-    padding: 5px 10px;
-    border-radius: 5px;
-    font-size: 14px;
-}
-
 /* File Upload Section */
 .file-upload {
     margin-bottom: 20px;
@@ -126,16 +93,6 @@ h1 {
 .cancel-btn:hover {
     background-color: #e53935;
 }
-
-/* Error Message Container */
-.error-message-container {
-    margin-top: 15px;
-    color: #d9534f;
-    font-size: 16px;
-    font-weight: bold;
-    text-align: center;
-}
-
 /* Download Section */
 .download-section {
     margin-top: 20px;
@@ -342,45 +299,6 @@ h1 {
     font-size: 16px;
     color: #333;
     line-height: 1.5;
-}
-
-/* Commodity List Section */
-.commodity-list-section {
-    margin-top: 20px;
-    padding: 15px;
-    border: 1px solid #e0e0e0;
-    border-radius: 10px;
-    background-color: #f9f9f9;
-    text-align: left;
-    margin-block: 20px;
-}
-
-.commodity-list-section h2 {
-    font-size: 20px;
-    color: #177524;
-    margin-top: 0;
-    margin-bottom: 15px;
-    text-align: left;
-}
-
-#commodity-list {
-    list-style-type: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    justify-content: left;
-}
-
-#commodity-list li {
-    background-color: #eaf4ff; /* Light blue background */
-    color: #0056b3; /* Darker blue text */
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-size: 14px;
-    border: 1px solid #b3d9ff;
-    white-space: nowrap;
 }
 
 /* Responsive adjustments */

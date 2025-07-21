@@ -33,14 +33,7 @@
 
     <div class="container">
         <h1>Search Commodity By AI</h1>
-        <div class="commodity-list-section">
-            <h2>Commodity List</h2>
-            <ul id="commodity-list">
-                {% for ref in references %}
-                <li>{{ ref }}</li>
-                {% endfor %}
-            </ul>
-        </div>
+        
         <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
             <div class="file-upload" id="drop-area">
                 <div id="drag-icon" class="icon">
@@ -79,7 +72,6 @@
                 <a href="#" id="download-btn" class="download-btn" download>Download Processed File</a>
             </div>
         </div>
-
     </div>
 
 

@@ -9,6 +9,15 @@ import concurrent.futures
 import threading
 import time
 import traceback
+import sys
+import io
+
+# Set stdout and stderr to utf-8 for Windows
+if sys.platform == "win32":
+    if sys.stdout.encoding != 'utf-8':
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    if sys.stderr.encoding != 'utf-8':
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 app = Flask(__name__)
 
@@ -20,7 +29,7 @@ openai_api_error = False
 # Configure OpenRouter API
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
-    api_key="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",
+    api_key="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",
 )
 
 # Config file path
@@ -29,7 +38,7 @@ REFERENCE_PATH = "config/reference.json"
 # Load references from file
 def load_reference_list():
     try:
-        with open(REFERENCE_PATH, "r") as f:
+        with open(REFERENCE_PATH, "r", encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
         print("Reference file not found, using default reference.")
@@ -45,8 +54,8 @@ def load_reference_list():
 def save_reference_list(reference_list):
     try:
         os.makedirs(os.path.dirname(REFERENCE_PATH), exist_ok=True)
-        with open(REFERENCE_PATH, "w") as f:
-            json.dump(reference_list, f, indent=2)
+        with open(REFERENCE_PATH, "w", encoding='utf-8') as f:
+            json.dump(reference_list, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"Could not save reference list: {e}")
         raise
@@ -97,16 +106,16 @@ def check_commodity_from_llm(commodity):
         result = completion.choices[0].message.content.strip()
         return 'Y' if result == 'Y' else 'N'
     except Exception as e:
+        openai_api_error = True  # Set flag on any API error
         error_msg = str(e).lower()
         if 'rate limit' in error_msg or '429' in error_msg:
-            openai_api_error = True
-            print(f"API Rate limit exceeded: {e}")
+            print(f"API Rate limit exceeded, switching to cosine similarity only. Error: {e}")
         elif 'timeout' in error_msg:
-            print(f"API Timeout error: {e}")
+            print(f"API Timeout error, switching to cosine similarity only. Error: {e}")
         elif 'connection' in error_msg:
-            print(f"API Connection error: {e}")
+            print(f"API Connection error, switching to cosine similarity only. Error: {e}")
         else:
-            print(f"Error in LLM: {e}")
+            print(f"An unexpected error occurred with the LLM, switching to cosine similarity only. Error: {e}")
         return 'N'
 
 # Combine cosine and LLM with fallback to Cosine if LLM fails
